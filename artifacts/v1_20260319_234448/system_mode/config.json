@@ -1,0 +1,28 @@
+{
+  "datasets": [
+    "bgl",
+    "spirit",
+    "thunderbird",
+    "hdfs"
+  ],
+  "dataset_path_overrides": {},
+  "split_mode": "loso_dev",
+  "holdout_dataset": "bgl",
+  "seed": 42,
+  "with_template": false,
+  "max_test_samples": 200,
+  "concurrency_limit": 8,
+  "few_shot_k": 6,
+  "retriever_normal_ratio": 0.67,
+  "instruction_profile": "strict",
+  "task_mode": "evidence_diag",
+  "context_window": 3,
+  "disable_rule_verifier": false,
+  "model_name": "Qwen/Qwen2.5-14B-Instruct",
+  "api_base_url": "http://localhost:8000/v1",
+  "run_mode": "full",
+  "eval_mode": "system",
+  "rows_input": 20000,
+  "rows_test": 200,
+  "mode": "system_mode"
+}

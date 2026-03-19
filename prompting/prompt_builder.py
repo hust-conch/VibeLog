@@ -40,6 +40,7 @@ class PromptBuilder:
         sample: pd.Series,
         retrieved_examples: pd.DataFrame,
         request_id: int = 1,
+        micro_context: list[str] | None = None,
     ) -> str:
         few_shot_block = ""
         if not retrieved_examples.empty:
@@ -47,6 +48,12 @@ class PromptBuilder:
             few_shot_block = "Cross-system few-shot examples:\n" + "\n".join(chunks) + "\n"
 
         template = self._clip(sample.get("template", ""), self.max_template_chars)
+        context_block = ""
+        if micro_context:
+            clipped = [self._clip(x, self.max_raw_chars) for x in micro_context if str(x).strip()]
+            if clipped:
+                context_lines = "\n".join([f"- {x}" for x in clipped])
+                context_block = f"micro_context_logs:\n{context_lines}\n"
         query_block = (
             "Now classify the target log.\n"
             f"ID: {request_id}\n"
@@ -54,6 +61,7 @@ class PromptBuilder:
             f"raw_log: {self._clip(sample.get('raw_log', ''), self.max_raw_chars)}\n"
             f"normalized_log: {self._clip(sample.get('normalized_log', ''), self.max_norm_chars)}\n"
             f"template: {template}\n"
+            f"{context_block}"
         )
 
         prompt = (

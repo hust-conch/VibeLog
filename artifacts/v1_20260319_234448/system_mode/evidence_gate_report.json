@@ -1,0 +1,58 @@
+{
+  "passed": true,
+  "size": 200,
+  "checks": [
+    {
+      "name": "enough_samples",
+      "ok": true,
+      "value": 200,
+      "rule": ">= 100"
+    },
+    {
+      "name": "output_structure_complete",
+      "ok": true,
+      "value": {
+        "evidence_type": 1.0,
+        "relevance_score": 1.0,
+        "is_key_evidence": 1.0,
+        "context_size": 1.0
+      },
+      "rule": "nonnull rate of key fields >= 0.95"
+    },
+    {
+      "name": "protocol_stable",
+      "ok": true,
+      "value": {
+        "parse_failed_count": 0,
+        "fallback_order_mapping_count": 0,
+        "retry_changed_label_count": 0
+      },
+      "rule": "parse_failed=0, fallback_order_mapping <= max(3,2%), retry_changed_label=0"
+    },
+    {
+      "name": "evidence_not_collapsed",
+      "ok": true,
+      "value": {
+        "dominant_type": "noise_benign_evidence",
+        "dominant_ratio": 0.605
+      },
+      "rule": "dominant evidence type ratio <= 0.90"
+    },
+    {
+      "name": "key_evidence_has_separation",
+      "ok": true,
+      "value": 0.31,
+      "rule": "0.10 <= key evidence rate <= 0.40"
+    }
+  ],
+  "evidence_distribution": {
+    "noise_benign_evidence": 121,
+    "failure_evidence": 36,
+    "system_level_evidence": 20,
+    "application_level_evidence": 14,
+    "recovery_evidence": 8,
+    "context_evidence": 1
+  },
+  "predictions_file": "/home/zhangjun/LogPrompt/project/artifacts/v1_20260319_234448/system_mode/predictions.csv",
+  "summary_file": "/home/zhangjun/LogPrompt/project/artifacts/v1_20260319_234448/system_mode/summary.json"
+}

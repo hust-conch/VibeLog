@@ -1,0 +1,2 @@
+accuracy,precision,recall,f1,size,abnormal_true,abnormal_pred,unknown_pred_count,unknown_pred_rate,dataset
+0.935,0.45454545454545453,0.9090909090909091,0.6060606060606061,200,11,22,0,0.0,bgl

@@ -1,0 +1,5 @@
+evidence_type,count
+noise_benign_evidence,68
+application_level_evidence,60
+system_level_evidence,38
+context_evidence,34

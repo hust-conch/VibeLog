@@ -1,0 +1,2 @@
+accuracy,precision,recall,f1,size,abnormal_true,abnormal_pred,unknown_pred_count,unknown_pred_rate,dataset
+0.995,0.9696969696969697,1.0,0.9846153846153847,200,32,33,0,0.0,thunderbird

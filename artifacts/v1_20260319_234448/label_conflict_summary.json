@@ -1,0 +1,11 @@
+{
+  "conflict_count": 11,
+  "conflict_ratio": 0.055,
+  "by_dataset": {
+    "bgl": 11
+  },
+  "by_type": {
+    "ambiguous_event_needing_context": 10,
+    "app_level_abnormal_but_labeled_abnormal": 1
+  }
+}

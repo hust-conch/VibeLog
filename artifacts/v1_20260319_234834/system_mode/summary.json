@@ -1,0 +1,46 @@
+{
+  "overall": {
+    "accuracy": 0.995,
+    "precision": 0.9696969696969697,
+    "recall": 1.0,
+    "f1": 0.9846153846153847,
+    "size": 200,
+    "abnormal_true": 32,
+    "abnormal_pred": 33,
+    "unknown_pred_count": 0,
+    "unknown_pred_rate": 0.0,
+    "TP": 32,
+    "FP": 1,
+    "FN": 0,
+    "TN": 167,
+    "parse_failed_count": 0,
+    "fallback_order_mapping_count": 0,
+    "keyword_fallback_count": 0,
+    "retry_used_count": 19,
+    "first_pass_fallback_count": 19,
+    "retry_changed_label_count": 0,
+    "key_evidence_count": 39,
+    "key_evidence_rate": 0.195,
+    "evidence_type_distribution": {
+      "noise_benign_evidence": 68,
+      "application_level_evidence": 60,
+      "system_level_evidence": 38,
+      "context_evidence": 34
+    },
+    "system_level_evidence_count": 38
+  },
+  "by_dataset": [
+    {
+      "accuracy": 0.995,
+      "precision": 0.9696969696969697,
+      "recall": 1.0,
+      "f1": 0.9846153846153847,
+      "size": 200,
+      "abnormal_true": 32,
+      "abnormal_pred": 33,
+      "unknown_pred_count": 0,
+      "unknown_pred_rate": 0.0,
+      "dataset": "thunderbird"
+    }
+  ]
+}

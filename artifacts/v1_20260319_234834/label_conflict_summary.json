@@ -1,0 +1,10 @@
+{
+  "conflict_count": 32,
+  "conflict_ratio": 0.16,
+  "by_dataset": {
+    "thunderbird": 32
+  },
+  "by_type": {
+    "app_level_abnormal_but_labeled_abnormal": 32
+  }
+}

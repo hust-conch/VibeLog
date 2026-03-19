@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from data.adapters import load_datasets
-from data.splitters import loso_split, random_split
+from data.splitters import loso_split, loso_with_dev, random_split
 from evaluation.reporter import create_run_dir, save_report
 from preprocess.normalizer import CanonicalizeConfig, LogCanonicalizer
 from prompting.example_bank import ExampleBankConfig, build_example_bank
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--split-mode",
-        choices=["random", "loso", "none"],
+        choices=["random", "loso", "loso_dev", "none"],
         default="random",
         help="Data split mode.",
     )
@@ -56,10 +56,46 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-test-samples", type=int, default=None)
     parser.add_argument("--concurrency-limit", type=int, default=12)
     parser.add_argument("--few-shot-k", type=int, default=6)
+    parser.add_argument("--retriever-normal-ratio", type=float, default=0.67)
+    parser.add_argument(
+        "--task-mode",
+        choices=["anomaly", "evidence_diag"],
+        default="evidence_diag",
+        help="Core task mode. evidence_diag outputs evidence type + relevance score for diagnosis-oriented analysis.",
+    )
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=3,
+        help="Micro-context window size per side for evidence-grounded prompting.",
+    )
+    parser.add_argument(
+        "--key-evidence-threshold",
+        type=float,
+        default=60.0,
+        help="Relevance score threshold to mark is_key_evidence.",
+    )
+    parser.add_argument(
+        "--instruction-profile",
+        choices=["strict", "relaxed"],
+        default="strict",
+        help="Instruction profile for system-mode semantic boundary.",
+    )
+    parser.add_argument(
+        "--disable-rule-verifier",
+        action="store_true",
+        help="Disable verifier for ablation.",
+    )
     parser.add_argument("--model-name", default="Qwen/Qwen2.5-14B-Instruct")
     parser.add_argument("--api-base-url", default="http://localhost:8000/v1")
     parser.add_argument("--api-key", default="EMPTY")
     parser.add_argument("--tokenizer-path", default="Qwen/Qwen2.5-14B-Instruct")
+    parser.add_argument(
+        "--eval-mode",
+        choices=["system"],
+        default="system",
+        help="Evaluation reporting mode.",
+    )
     parser.add_argument(
         "--output",
         default="project/artifacts",
@@ -77,6 +113,8 @@ def main() -> None:
         df = random_split(df, seed=args.seed)
     elif args.split_mode == "loso":
         df = loso_split(df, holdout_dataset=args.holdout_dataset)
+    elif args.split_mode == "loso_dev":
+        df = loso_with_dev(df, holdout_dataset=args.holdout_dataset, seed=args.seed)
 
     canonicalizer = LogCanonicalizer()
     df = canonicalizer.canonicalize(
@@ -122,6 +160,12 @@ def main() -> None:
     infer_cfg = InferenceConfig(
         concurrency_limit=args.concurrency_limit,
         few_shot_k=args.few_shot_k,
+        use_rule_verifier=not args.disable_rule_verifier,
+        retriever_normal_ratio=args.retriever_normal_ratio,
+        instruction_profile=args.instruction_profile,
+        task_mode=args.task_mode,
+        context_window=args.context_window,
+        key_evidence_threshold=args.key_evidence_threshold,
     )
 
     async def _run():
@@ -144,20 +188,34 @@ def main() -> None:
         "max_test_samples": args.max_test_samples,
         "concurrency_limit": args.concurrency_limit,
         "few_shot_k": args.few_shot_k,
+        "retriever_normal_ratio": args.retriever_normal_ratio,
+        "instruction_profile": args.instruction_profile,
+        "task_mode": args.task_mode,
+        "context_window": args.context_window,
+        "key_evidence_threshold": args.key_evidence_threshold,
+        "disable_rule_verifier": args.disable_rule_verifier,
         "model_name": args.model_name,
         "api_base_url": args.api_base_url,
         "run_mode": args.run_mode,
+        "eval_mode": args.eval_mode,
         "rows_input": len(df),
         "rows_test": len(test_df),
     }
-    report = save_report(predictions=predictions, config_dict=cfg_dump, output_dir=str(run_dir))
+    reports = {}
+    system_dir = run_dir / "system_mode"
+    reports["system_mode"] = save_report(
+        predictions=predictions,
+        config_dict={**cfg_dump, "mode": "system_mode"},
+        output_dir=str(system_dir),
+    )
 
     print("=" * 60)
     print("Unified Pipeline V1 Completed")
     print("=" * 60)
     print(f"Run dir: {run_dir}")
-    print(f"Overall metrics: {json.dumps(report['overall_metrics'], ensure_ascii=False)}")
-    print(f"Summary file: {report['summary']}")
+    if "system_mode" in reports:
+        print(f"[system_mode] Overall metrics: {json.dumps(reports['system_mode']['overall_metrics'], ensure_ascii=False)}")
+        print(f"[system_mode] Summary: {reports['system_mode']['summary']}")
 
 
 if __name__ == "__main__":

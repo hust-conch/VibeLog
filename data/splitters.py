@@ -53,6 +53,38 @@ def loso_split(df: pd.DataFrame, holdout_dataset: str) -> pd.DataFrame:
     return out
 
 
+def loso_with_dev(
+    df: pd.DataFrame,
+    holdout_dataset: str,
+    dev_ratio: float = 0.1,
+    seed: int = 42,
+) -> pd.DataFrame:
+    holdout = holdout_dataset.lower()
+    train_pool = df[df["dataset"] != holdout].copy()
+    test_df = df[df["dataset"] == holdout].copy()
+
+    if len(train_pool) == 0:
+        out = df.copy()
+        out["split"] = out["dataset"].apply(lambda d: "test" if d == holdout else "train")
+        return out
+
+    stratify = train_pool["label"] if train_pool["label"].nunique() > 1 else None
+    train_df, dev_df = train_test_split(
+        train_pool,
+        test_size=dev_ratio,
+        random_state=seed,
+        stratify=stratify,
+    )
+
+    train_df = train_df.copy()
+    dev_df = dev_df.copy()
+    test_df = test_df.copy()
+    train_df["split"] = "train"
+    dev_df["split"] = "dev"
+    test_df["split"] = "test"
+    return pd.concat([train_df, dev_df, test_df], ignore_index=True)
+
+
 def get_loso_views(df: pd.DataFrame, holdout_dataset: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     split_df = loso_split(df, holdout_dataset=holdout_dataset)
     train_df = split_df[split_df["split"] == "train"].copy()

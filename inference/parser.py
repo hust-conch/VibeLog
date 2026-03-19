@@ -7,7 +7,7 @@ from typing import Dict, List
 
 class ResponseParser:
     LINE_PATTERN = re.compile(
-        r"^\s*[\*\-\[#\(\{<\s]*(\d+)[\*\-\]#\)\}>:\.\s]*(?:label|prediction|class)?\s*[:：-]?\s*\**\s*(normal|abnormal)\b",
+        r"^\s*[\*\-\[#\(\{<\s]*(\d+)[\*\-\]#\)\}>:\.\s]*(?:label|prediction|class)?\s*[:：-]?\s*\**\s*(normal|abnormal)\b\s*(?:-|:)?\s*(.*)$",
         re.IGNORECASE,
     )
     LABEL_PATTERN = re.compile(r"\b(normal|abnormal)\b", re.IGNORECASE)
@@ -32,7 +32,8 @@ class ResponseParser:
             try:
                 local_id = int(match.group(1))
                 pred_label = match.group(2).lower()
-                parsed_items.append((local_id, pred_label, line))
+                reason = match.group(3).strip()
+                parsed_items.append((local_id, pred_label, reason, line, "line"))
             except ValueError:
                 continue
         return parsed_items
@@ -61,7 +62,8 @@ class ResponseParser:
                     continue
                 pred_label = str(pred).lower().strip()
                 if pred_label in ("normal", "abnormal"):
-                    parsed_items.append((idx, pred_label, str(obj)))
+                    reason = obj.get("reason", obj.get("explanation", obj.get("rationale", "")))
+                    parsed_items.append((idx, pred_label, str(reason).strip(), str(obj), "json"))
             if parsed_items:
                 break
         return parsed_items
@@ -76,7 +78,7 @@ class ResponseParser:
         if first_model_idx == 1 and expected_indices and expected_indices[0] != 1:
             use_positional_mapping = True
 
-        for i, (model_idx, pred_label, explanation) in enumerate(parsed_items):
+        for i, (model_idx, pred_label, reason, raw_line, parse_method) in enumerate(parsed_items):
             if use_positional_mapping:
                 if i >= len(expected_indices):
                     continue
@@ -89,7 +91,12 @@ class ResponseParser:
                 else:
                     continue
             if global_idx not in results:
-                results[global_idx] = {"pred": pred_label, "explanation": explanation}
+                results[global_idx] = {
+                    "pred": pred_label,
+                    "reason": reason,
+                    "raw_parsed_line": raw_line,
+                    "parse_method": parse_method,
+                }
         return results
 
     @staticmethod
@@ -131,5 +138,10 @@ class ResponseParser:
             if idx in results:
                 continue
             if i < len(order_labels):
-                results[idx] = {"pred": order_labels[i], "explanation": "fallback_order_mapping"}
+                results[idx] = {
+                    "pred": order_labels[i],
+                    "reason": "",
+                    "raw_parsed_line": "",
+                    "parse_method": "fallback_order_mapping",
+                }
         return results

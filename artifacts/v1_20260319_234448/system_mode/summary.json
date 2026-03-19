@@ -1,0 +1,48 @@
+{
+  "overall": {
+    "accuracy": 0.935,
+    "precision": 0.45454545454545453,
+    "recall": 0.9090909090909091,
+    "f1": 0.6060606060606061,
+    "size": 200,
+    "abnormal_true": 11,
+    "abnormal_pred": 22,
+    "unknown_pred_count": 0,
+    "unknown_pred_rate": 0.0,
+    "TP": 10,
+    "FP": 12,
+    "FN": 1,
+    "TN": 177,
+    "parse_failed_count": 0,
+    "fallback_order_mapping_count": 0,
+    "keyword_fallback_count": 0,
+    "retry_used_count": 4,
+    "first_pass_fallback_count": 4,
+    "retry_changed_label_count": 0,
+    "key_evidence_count": 62,
+    "key_evidence_rate": 0.31,
+    "evidence_type_distribution": {
+      "noise_benign_evidence": 121,
+      "failure_evidence": 36,
+      "system_level_evidence": 20,
+      "application_level_evidence": 14,
+      "recovery_evidence": 8,
+      "context_evidence": 1
+    },
+    "system_level_evidence_count": 20
+  },
+  "by_dataset": [
+    {
+      "accuracy": 0.935,
+      "precision": 0.45454545454545453,
+      "recall": 0.9090909090909091,
+      "f1": 0.6060606060606061,
+      "size": 200,
+      "abnormal_true": 11,
+      "abnormal_pred": 22,
+      "unknown_pred_count": 0,
+      "unknown_pred_rate": 0.0,
+      "dataset": "bgl"
+    }
+  ]
+}

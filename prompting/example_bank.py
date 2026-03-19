@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 
@@ -10,9 +10,11 @@ import pandas as pd
 class ExampleBankConfig:
     max_per_dataset_label: int = 80
     seed: int = 42
+    allowed_splits: Tuple[str, ...] = ("train",)
+    drop_duplicate_keys: bool = True
 
 
-ABNORMAL_HINTS = ["panic", "deadlock", "corrupt", "unrecoverable", "fatal", "timeout", "catastrophic"]
+ABNORMAL_HINTS = ["panic", "deadlock", "corrupt", "unrecoverable", "catastrophic", "i/o error"]
 NORMAL_HINTS = ["info", "warn", "corrected", "recovered", "resumed", "retry", "synchronized"]
 
 
@@ -38,6 +40,17 @@ def build_example_bank(df: pd.DataFrame, config: ExampleBankConfig | None = None
 
     frame = df.copy()
     frame = frame[frame["label_str"].isin(["normal", "abnormal"])].copy()
+    if "split" in frame.columns:
+        frame = frame[frame["split"].isin(cfg.allowed_splits)].copy()
+    if cfg.drop_duplicate_keys and not frame.empty:
+        frame["_dedup_key"] = (
+            frame["dataset"].astype(str)
+            + "||"
+            + frame["normalized_log"].astype(str)
+            + "||"
+            + frame["label_str"].astype(str)
+        )
+        frame = frame.drop_duplicates("_dedup_key").copy()
     if "template" not in frame.columns:
         frame["template"] = ""
 

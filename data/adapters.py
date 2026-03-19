@@ -50,7 +50,7 @@ def adapt_dataset(config: DatasetConfig) -> pd.DataFrame:
         raise ValueError(f"[{config.name}] missing label column: {config.label_col}")
 
     id_series = _resolve_id_series(df, config.id_col)
-    logs = df[config.log_col].astype(str).fillna("")
+    logs = df[config.log_col].fillna("").astype(str)
     labels = df[config.label_col]
 
     unified_rows: List[dict] = []

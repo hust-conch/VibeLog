@@ -15,7 +15,8 @@ TOKEN_PATTERN = re.compile(r"[a-zA-Z_<>]+")
 class RetrieverConfig:
     k_total: int = 6
     seed: int = 42
-    min_per_label: int = 2
+    normal_ratio: float = 0.67
+    max_per_source_dataset: int = 2
 
 
 def _tokenize(text: str) -> set:
@@ -42,6 +43,38 @@ class CrossSystemRetriever:
     def __init__(self, config: RetrieverConfig | None = None):
         self.config = config or RetrieverConfig()
 
+    def _take_with_system_cap(self, df: pd.DataFrame, k: int) -> pd.DataFrame:
+        if k <= 0 or df.empty:
+            return df.head(0).copy()
+        picked_rows = []
+        system_counter = {}
+        for _, row in df.sort_values("sim_score", ascending=False).iterrows():
+            ds = str(row.get("dataset", "unknown")).lower()
+            cnt = system_counter.get(ds, 0)
+            if cnt >= self.config.max_per_source_dataset:
+                continue
+            picked_rows.append(row.to_dict())
+            system_counter[ds] = cnt + 1
+            if len(picked_rows) >= k:
+                break
+        return pd.DataFrame(picked_rows)
+
+    def _apply_global_system_cap(self, df: pd.DataFrame, k: int) -> pd.DataFrame:
+        if df.empty:
+            return df
+        picked_rows = []
+        system_counter = {}
+        for _, row in df.sort_values("sim_score", ascending=False).iterrows():
+            ds = str(row.get("dataset", "unknown")).lower()
+            cnt = system_counter.get(ds, 0)
+            if cnt >= self.config.max_per_source_dataset:
+                continue
+            picked_rows.append(row.to_dict())
+            system_counter[ds] = cnt + 1
+            if len(picked_rows) >= k:
+                break
+        return pd.DataFrame(picked_rows)
+
     def retrieve(self, query_row: pd.Series, example_bank: pd.DataFrame, target_dataset: str) -> pd.DataFrame:
         if example_bank.empty:
             return example_bank.copy()
@@ -63,16 +96,29 @@ class CrossSystemRetriever:
             axis=1,
         )
 
-        # 轻量平衡抽取：normal/abnormal 各取一半，至少 min_per_label
+        # 轻量偏置控制：normal 主导 + 少量 abnormal 对照
         k = self.config.k_total
-        per_label = max(self.config.min_per_label, math.floor(k / 2))
-        normal_top = pool[pool["label"] == "normal"].sort_values("sim_score", ascending=False).head(per_label)
-        abnormal_top = pool[pool["label"] == "abnormal"].sort_values("sim_score", ascending=False).head(per_label)
+        normal_k = math.ceil(k * self.config.normal_ratio)
+        abnormal_k = max(0, k - normal_k)
 
+        normal_pool = pool[pool["label"] == "normal"].copy()
+        abnormal_pool = pool[pool["label"] == "abnormal"].copy()
+
+        normal_top = self._take_with_system_cap(normal_pool, normal_k)
+        abnormal_top = self._take_with_system_cap(abnormal_pool, abnormal_k)
         picked = pd.concat([normal_top, abnormal_top], ignore_index=True)
         if len(picked) < k:
             used = set(picked["bank_index"].tolist()) if "bank_index" in picked.columns else set()
-            remain = pool[~pool["bank_index"].isin(used)].sort_values("sim_score", ascending=False)
-            picked = pd.concat([picked, remain.head(k - len(picked))], ignore_index=True)
+            remain = pool[~pool["bank_index"].isin(used)].copy()
+            remain_top = self._take_with_system_cap(remain, k - len(picked))
+            picked = pd.concat([picked, remain_top], ignore_index=True)
+
+        picked = self._apply_global_system_cap(picked, k)
+        if len(picked) < k:
+            used = set(picked["bank_index"].tolist()) if "bank_index" in picked.columns else set()
+            remain2 = pool[~pool["bank_index"].isin(used)].copy()
+            fill = self._take_with_system_cap(remain2, k - len(picked))
+            picked = pd.concat([picked, fill], ignore_index=True)
+            picked = self._apply_global_system_cap(picked, k)
 
         return picked.head(k).drop(columns=["bank_index"], errors="ignore").reset_index(drop=True)
