@@ -1,0 +1,283 @@
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+from pathlib import Path
+from typing import Dict, List
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from data.adapters import load_datasets
+from data.splitters import loso_split, loso_with_dev, random_split
+from evaluation.reporter import create_run_dir, save_report
+from preprocess.normalizer import CanonicalizeConfig, LogCanonicalizer
+from prompting.example_bank import ExampleBankConfig, build_example_bank
+
+
+def _parse_dataset_path_overrides(items: List[str]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError(f"Invalid override '{item}', expected name=path")
+        k, v = item.split("=", 1)
+        out[k.strip().lower()] = v.strip()
+    return out
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="V1 pipeline: Adapter + Canonicalizer + Prompt Builder + Inference + Evaluator"
+    )
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        default=["bgl", "spirit", "thunderbird", "hdfs"],
+        help="Datasets to load (supported: bgl/spirit/thunderbird/hdfs).",
+    )
+    parser.add_argument(
+        "--dataset-path",
+        action="append",
+        default=[],
+        help="Optional path override in name=path format. Example: bgl=/abs/path/BGL_5k.xlsx",
+    )
+    parser.add_argument(
+        "--split-mode",
+        choices=["random", "loso", "loso_dev", "none"],
+        default="random",
+        help="Data split mode.",
+    )
+    parser.add_argument(
+        "--holdout-dataset",
+        default="hdfs",
+        help="Used when split-mode=loso.",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--with-template", action="store_true")
+    parser.add_argument("--run-mode", choices=["module12", "full"], default="full")
+    parser.add_argument("--max-test-samples", type=int, default=None)
+    parser.add_argument("--concurrency-limit", type=int, default=12)
+    parser.add_argument("--few-shot-k", type=int, default=6)
+    parser.add_argument("--retriever-normal-ratio", type=float, default=0.67)
+    parser.add_argument(
+        "--task-mode",
+        choices=["anomaly", "evidence_diag"],
+        default="evidence_diag",
+        help="Core task mode. evidence_diag outputs evidence type + relevance score for diagnosis-oriented analysis.",
+    )
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=3,
+        help="Micro-context window size per side for evidence-grounded prompting.",
+    )
+    parser.add_argument(
+        "--key-evidence-threshold",
+        type=float,
+        default=60.0,
+        help="Relevance score threshold to mark is_key_evidence.",
+    )
+    parser.add_argument("--diag-window-size", type=int, default=8, help="Stage-2 diagnosis window size.")
+    parser.add_argument("--diag-window-stride", type=int, default=4, help="Stage-2 diagnosis window stride.")
+    parser.add_argument("--diag-top-k-evidence", type=int, default=3, help="Stage-2 top-k evidence lines.")
+    parser.add_argument(
+        "--disable-stage3-llm",
+        action="store_true",
+        help="Disable stage-3 window-level LLM diagnosis generation.",
+    )
+    parser.add_argument("--stage3-max-windows", type=int, default=120, help="Maximum windows to run in stage-3 LLM diagnosis.")
+    parser.add_argument(
+        "--instruction-profile",
+        choices=["strict", "relaxed"],
+        default="strict",
+        help="Instruction profile for system-mode semantic boundary.",
+    )
+    parser.add_argument(
+        "--disable-rule-verifier",
+        action="store_true",
+        help="Disable verifier for ablation.",
+    )
+    parser.add_argument("--model-name", default="Qwen/Qwen2.5-14B-Instruct")
+    parser.add_argument("--api-base-url", default="http://localhost:8000/v1")
+    parser.add_argument("--api-key", default="EMPTY")
+    parser.add_argument("--tokenizer-path", default="Qwen/Qwen2.5-14B-Instruct")
+    parser.add_argument(
+        "--eval-mode",
+        choices=["system"],
+        default="system",
+        help="Evaluation reporting mode.",
+    )
+    parser.add_argument(
+        "--output",
+        default="project/artifacts",
+        help="Output base dir for reports.",
+    )
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    overrides = _parse_dataset_path_overrides(args.dataset_path)
+
+    df = load_datasets(args.datasets, dataset_paths=overrides)
+    if args.split_mode == "random":
+        df = random_split(df, seed=args.seed)
+    elif args.split_mode == "loso":
+        df = loso_split(df, holdout_dataset=args.holdout_dataset)
+    elif args.split_mode == "loso_dev":
+        df = loso_with_dev(df, holdout_dataset=args.holdout_dataset, seed=args.seed)
+
+    canonicalizer = LogCanonicalizer()
+    df = canonicalizer.canonicalize(
+        df,
+        raw_col="raw_log",
+        config=CanonicalizeConfig(add_template=args.with_template, keep_raw=True),
+    )
+
+    if args.run_mode == "module12":
+        out_file = Path(args.output) / "unified_canonicalized_samples.csv"
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_file, index=False)
+        print("=" * 60)
+        print("Unified Pipeline (Module1+2) Completed")
+        print("=" * 60)
+        print(f"Rows: {len(df)}")
+        print(f"Datasets: {sorted(df['dataset'].unique().tolist())}")
+        print(f"Label distribution: {df['label_str'].value_counts().to_dict()}")
+        print(f"Split distribution: {df['split'].value_counts().to_dict()}")
+        print(f"Output saved to: {out_file}")
+        return
+
+    # Full V1 pipeline
+    example_source = df[df["split"] != "test"] if "split" in df.columns else df
+    example_bank = build_example_bank(
+        example_source,
+        config=ExampleBankConfig(seed=args.seed),
+    )
+
+    test_df = df[df["split"] == "test"].copy() if "split" in df.columns else df.copy()
+    if args.max_test_samples is not None and args.max_test_samples < len(test_df):
+        test_df = test_df.sample(n=args.max_test_samples, random_state=args.seed).reset_index(drop=True)
+
+    from inference.llm_service import AsyncVLLMService, LLMConfig
+    from inference.diagnosis import DiagnosisConfig, export_stage2_outputs, export_stage3_outputs
+    from inference.pipeline import InferenceConfig, run_inference_async
+
+    llm_cfg = LLMConfig(
+        model_name=args.model_name,
+        api_base_url=args.api_base_url,
+        api_key=args.api_key,
+        tokenizer_path=args.tokenizer_path,
+    )
+    infer_cfg = InferenceConfig(
+        concurrency_limit=args.concurrency_limit,
+        few_shot_k=args.few_shot_k,
+        use_rule_verifier=not args.disable_rule_verifier,
+        retriever_normal_ratio=args.retriever_normal_ratio,
+        instruction_profile=args.instruction_profile,
+        task_mode=args.task_mode,
+        context_window=args.context_window,
+        key_evidence_threshold=args.key_evidence_threshold,
+    )
+
+    async def _run():
+        llm = AsyncVLLMService(llm_cfg)
+        try:
+            return await run_inference_async(test_df, example_bank=example_bank, llm=llm, cfg=infer_cfg)
+        finally:
+            await llm.aclose()
+
+    predictions = asyncio.run(_run())
+
+    run_dir = create_run_dir(args.output, run_name="v1")
+    cfg_dump = {
+        "datasets": args.datasets,
+        "dataset_path_overrides": overrides,
+        "split_mode": args.split_mode,
+        "holdout_dataset": args.holdout_dataset,
+        "seed": args.seed,
+        "with_template": args.with_template,
+        "max_test_samples": args.max_test_samples,
+        "concurrency_limit": args.concurrency_limit,
+        "few_shot_k": args.few_shot_k,
+        "retriever_normal_ratio": args.retriever_normal_ratio,
+        "instruction_profile": args.instruction_profile,
+        "task_mode": args.task_mode,
+        "context_window": args.context_window,
+        "key_evidence_threshold": args.key_evidence_threshold,
+        "diag_window_size": args.diag_window_size,
+        "diag_window_stride": args.diag_window_stride,
+        "diag_top_k_evidence": args.diag_top_k_evidence,
+        "disable_stage3_llm": args.disable_stage3_llm,
+        "stage3_max_windows": args.stage3_max_windows,
+        "disable_rule_verifier": args.disable_rule_verifier,
+        "model_name": args.model_name,
+        "api_base_url": args.api_base_url,
+        "run_mode": args.run_mode,
+        "eval_mode": args.eval_mode,
+        "rows_input": len(df),
+        "rows_test": len(test_df),
+    }
+    reports = {}
+    system_dir = run_dir / "system_mode"
+    reports["system_mode"] = save_report(
+        predictions=predictions,
+        config_dict={**cfg_dump, "mode": "system_mode"},
+        output_dir=str(system_dir),
+    )
+    diag_csv, diag_summary = export_stage2_outputs(
+        predictions=predictions,
+        out_dir=str(system_dir),
+        cfg=DiagnosisConfig(
+            window_size=args.diag_window_size,
+            window_stride=args.diag_window_stride,
+            top_k_evidence=args.diag_top_k_evidence,
+            key_evidence_threshold=args.key_evidence_threshold,
+            enable_stage3_llm=not args.disable_stage3_llm,
+            stage3_max_windows=args.stage3_max_windows,
+        ),
+    )
+
+    stage3_csv = ""
+    stage3_summary = ""
+    if not args.disable_stage3_llm:
+        async def _run_stage3():
+            llm = AsyncVLLMService(llm_cfg)
+            try:
+                return await export_stage3_outputs(
+                    predictions=predictions,
+                    out_dir=str(system_dir),
+                    llm=llm,
+                    cfg=DiagnosisConfig(
+                        window_size=args.diag_window_size,
+                        window_stride=args.diag_window_stride,
+                        top_k_evidence=args.diag_top_k_evidence,
+                        key_evidence_threshold=args.key_evidence_threshold,
+                        enable_stage3_llm=True,
+                        stage3_max_windows=args.stage3_max_windows,
+                    ),
+                )
+            finally:
+                await llm.aclose()
+
+        stage3_csv, stage3_summary = asyncio.run(_run_stage3())
+
+    print("=" * 60)
+    print("Unified Pipeline V1 Completed")
+    print("=" * 60)
+    print(f"Run dir: {run_dir}")
+    if "system_mode" in reports:
+        print(f"[system_mode] Overall metrics: {json.dumps(reports['system_mode']['overall_metrics'], ensure_ascii=False)}")
+        print(f"[system_mode] Summary: {reports['system_mode']['summary']}")
+    print(f"[stage2] Diagnosis windows: {diag_csv}")
+    print(f"[stage2] Diagnosis summary: {diag_summary}")
+    if not args.disable_stage3_llm:
+        print(f"[stage3] Diagnosis windows: {stage3_csv}")
+        print(f"[stage3] Diagnosis summary: {stage3_summary}")
+
+
+if __name__ == "__main__":
+    main()

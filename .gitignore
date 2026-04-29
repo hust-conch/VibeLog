@@ -1,0 +1,50 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and editor state
+.venv/
+venv/
+env/
+.env
+.env.*
+.vscode/
+.idea/
+
+# Generated experiment outputs
+artifacts/
+
+# Generated data/result files
+*.xlsx
+*.xls
+*.csv
+*.npz
+*.parquet
+*.pkl
+*.pickle
+
+# Logs and runtime outputs
+*.log
+*.out
+*.err
+checkpoints/
+models/
+runs/
+wandb/
+tensorboard/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.7z
+
+# OS files
+.DS_Store
+Thumbs.db

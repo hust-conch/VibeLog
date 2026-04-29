@@ -1,0 +1,18 @@
+run_mode: full
+datasets: [bgl, spirit, thunderbird, hdfs]
+split_mode: loso_dev
+holdout_dataset: bgl
+max_test_samples: 200
+concurrency_limit: 8
+few_shot_k: 6
+task_mode: evidence_diag
+context_window: 3
+instruction_profile: strict
+key_evidence_threshold: 65
+diag_window_size: 8
+diag_window_stride: 4
+diag_top_k_evidence: 3
+stage3_max_windows: 80
+eval_mode: system
+output: project/artifacts
+
